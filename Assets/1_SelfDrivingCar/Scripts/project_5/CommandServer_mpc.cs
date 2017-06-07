@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using SocketIO;
 using UnityStandardAssets.Vehicles.Car;
 using System;
+using UnityEngine.SceneManagement;
 
 public class CommandServer_mpc : MonoBehaviour
 {
@@ -19,6 +20,7 @@ public class CommandServer_mpc : MonoBehaviour
 	{
 		_socket = GameObject.Find("SocketIO").GetComponent<SocketIOComponent>();
 		_socket.On("open", OnOpen);
+		_socket.On("reset", OnReset);
 		_socket.On("steer", OnSteer);
 		_socket.On("manual", onManual);
 		_carController = CarRemoteControl.GetComponent<CarController>();
@@ -66,12 +68,19 @@ public class CommandServer_mpc : MonoBehaviour
 		EmitTelemetry (obj);
 	}
 
+	void OnReset(SocketIOEvent obj)
+	{
+		SceneManager.LoadScene("LakeTrackAutonomous_mpc");
+		EmitTelemetry (obj);
+	}
+
 	void OnSteer(SocketIOEvent obj)
 	{
         Debug.Log("Steering data event ...");
 		JSONObject jsonObject = obj.data;
 		CarRemoteControl.SteeringAngle = float.Parse(jsonObject.GetField("steering_angle").ToString());
 		CarRemoteControl.Acceleration = float.Parse(jsonObject.GetField("throttle").ToString());
+
 
 		//string next_x = jsonObject.GetField ("next_x").ToString ();
 		//string next_y = jsonObject.GetField ("next_y").ToString ();
@@ -114,7 +123,8 @@ public class CommandServer_mpc : MonoBehaviour
 				_socket.Emit("telemetry", new JSONObject());
 			} else {
 				// Collect Data from the Car
-				Dictionary<string, JSONObject> data = new Dictionary<string, JSONObject>();
+				// Dictionary<string, JSONObject> data = new Dictionary<string, JSONObject>();
+				JSONObject data = new JSONObject(JSONObject.Type.OBJECT);
 				var cte = wpt.CrossTrackError (_carController);
 				Debug.Log(string.Format("In between waypoint {0} and {1}", wpt.prev_wp, wpt.next_wp));
 				var pos = _carController.Position();
@@ -127,23 +137,36 @@ public class CommandServer_mpc : MonoBehaviour
 					ptsx.Add(new JSONObject(wpt.waypoints[i%wpt.waypoints.Count].x));
 					ptsy.Add(new JSONObject(wpt.waypoints[i%wpt.waypoints.Count].z));
 				}
-				data["ptsx"] = new JSONObject(ptsx.ToArray());
-				data["ptsy"] = new JSONObject(ptsy.ToArray());
+				//data["ptsx"] = new JSONObject(ptsx.ToArray());
+				//data["ptsy"] = new JSONObject(ptsy.ToArray());
+				data.AddField("ptsx", new JSONObject(ptsx.ToArray()));
+				data.AddField("ptsy", new JSONObject(ptsy.ToArray()));
 
-                // Orientations
-                data["psi_unity"] = new JSONObject(psi * Mathf.Deg2Rad);
-				data["psi"] = new JSONObject(convertAngle(psi) * Mathf.Deg2Rad);
+               			// Orientations
+                		//data["psi_unity"] = new JSONObject(psi * Mathf.Deg2Rad);
+				//data["psi"] = new JSONObject(convertAngle(psi) * Mathf.Deg2Rad);
+                		data.AddField("psi_unity", psi * Mathf.Deg2Rad);
+				data.AddField("psi", convertAngle(psi) * Mathf.Deg2Rad);
 
-                // Global position.
-                data["x"] = new JSONObject(pos.x);
-                data["y"] = new JSONObject(pos.z);
-                // Steering angle
-				data["steering_angle"] = new JSONObject(_carController.CurrentSteerAngle * Mathf.Deg2Rad);
-                // Throttle
-				data["throttle"] = new JSONObject(_carController.AccelInput);
-                // Velocity
-				data["speed"] = new JSONObject(_carController.CurrentSpeed);
-				_socket.Emit("telemetry", new JSONObject(data));
+               			// Global position.
+                		// data["x"] = new JSONObject(pos.x);
+                		// data["y"] = new JSONObject(pos.z);
+                		data.AddField("x", pos.x);
+                		data.AddField("y", pos.z);
+                		// Steering angle
+				// data["steering_angle"] = new JSONObject(_carController.CurrentSteerAngle * Mathf.Deg2Rad);
+				data.AddField("steering_angle", _carController.CurrentSteerAngle * Mathf.Deg2Rad);
+                		// Throttle
+				// data["throttle"] = new JSONObject(_carController.AccelInput);
+				data.AddField("throttle", _carController.AccelInput);
+                		// Velocity
+				// data["speed"] = new JSONObject(_carController.CurrentSpeed);
+				data.AddField("speed", _carController.CurrentSpeed);
+                		// Image for ML
+                                var image = Convert.ToBase64String (CameraHelper.CaptureFrame (FrontFacingCamera));
+                                // data["image"] = new JSONObject(image);
+                                data.AddField("image", image);
+				_socket.Emit("telemetry", data);
 			}
 		});
 				
